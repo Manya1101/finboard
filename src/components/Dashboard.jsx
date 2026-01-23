@@ -1,9 +1,9 @@
 "use client";
 
 import { useSelector, useDispatch } from "react-redux";
-//import { addWidget, deleteWidget } from "@/store/widgetSlice";
-import { addWidget } from "@/store/widgetSlice"; 
-import AddWidgetModal from "./modals/AddWidgetModal"; 
+import { addWidget, deleteWidget } from "@/store/widgetSlice";
+//import { addWidget } from "@/store/widgetSlice"; 
+//import AddWidgetModal from "./modals/AddWidgetModal"; 
 import { useState } from "react"; 
 
 export default function Dashboard() {
@@ -46,15 +46,17 @@ export default function Dashboard() {
                 key={widget.id}
                 className="bg-slate-900 border border-slate-700 rounded-lg p-4 text-white"
               >
-                {/* <div className="flex justify-between items-center"> */}
-                  <span>{widget.title || "Widget"}</span>
-                  {/* <button
-                    onClick={() => dispatch(deleteWidget(widget.id))}
-                    className="text-red-400 hover:text-red-300 text-sm"
-                  >
-                    Delete
-                  </button> */}
-                {/* </div> */}
+                  {/* <span>{widget.title || "Widget"}</span> */}
+                  <div className="flex justify-between items-center">
+                        <span>{widget.title || "Widget"}</span>
+
+                        <button
+                            onClick={() => dispatch(deleteWidget(widget.id))}
+                            className="text-red-400 hover:text-red-300 text-sm"
+                        >
+                            Delete
+                        </button>
+                        </div>
               </div>
             ))}
           </div>
