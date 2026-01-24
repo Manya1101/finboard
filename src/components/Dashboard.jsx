@@ -8,8 +8,6 @@ import { useState, useEffect, Suspense, useRef } from "react";
 
 import {
   Plus,
-  Download,
-  Upload,
 } from "lucide-react";
 
 import AddWidgetModal from "./modals/AddWidgetModal"; 
@@ -40,12 +38,29 @@ const WidgetSkeleton = ({ type }) => (
 
 export default function Dashboard() {
   const dispatch = useDispatch();
+  const widgets = useSelector((state) => state.widgets.list);  // READ widgets from Redux store
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [configWidget, setConfigWidget] = useState(null); // Configure modal
-  const [showExportMenu, setShowExportMenu] = useState(false);
-  const fileInputRef = useRef(null);
+  
+    useEffect(() => {
+    const savedWidgets = localStorage.getItem("widgets");
+    if (savedWidgets) {
+      const parsedWidgets = JSON.parse(savedWidgets);
+      parsedWidgets.forEach(widget => dispatch(addWidget(widget)));
+    }
+  }, [dispatch]);
 
-   const handleAddWidget = (widget) => {
+  // Save to localStorage whenever widgets change
+useEffect(() => {
+  if (widgets.length > 0) {
+    localStorage.setItem("widgets", JSON.stringify(widgets));
+  } else {
+    localStorage.removeItem("widgets");
+  }
+}, [widgets]);
+
+  const handleAddWidget = (widget) => {
     dispatch(addWidget(widget));
     setIsModalOpen(false);
     };
@@ -59,37 +74,6 @@ export default function Dashboard() {
     console.log("Configure widget:", widget);
     };
 
-  // READ widgets from Redux store
-  const widgets = useSelector((state) => state.widgets.list);
-
-   const handleExport = () => {
-    const dataBlob = new Blob(
-      [JSON.stringify({ widgets }, null, 2)],
-      { type: "application/json" }
-    );
-
-    const url = URL.createObjectURL(dataBlob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "dashboard-config.json";
-    link.click();
-    URL.revokeObjectURL(url);
-    setShowExportMenu(false);
-  };
-
- //Import widgets JSON
-  const handleImport = (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const config = JSON.parse(e.target.result);
-      config.widgets.forEach((widget) => dispatch(addWidget(widget)));
-    };
-
-    reader.readAsText(file);
-  };
 
    return (
     <div className="min-h-screen bg-slate-950 p-6">
@@ -100,31 +84,7 @@ export default function Dashboard() {
           <h1 className="text-3xl font-bold text-white">API Dashboard</h1>
 
           <div className="flex gap-3">
-            {/* EXPORT / IMPORT */}
-            <button
-              onClick={() => setShowExportMenu(!showExportMenu)}
-              className="bg-slate-800 px-4 py-2 rounded text-white"
-            >
-              <Download size={16} />
-            </button>
-
-            {showExportMenu && (
-              <div className="absolute bg-slate-800 rounded mt-2">
-                <button onClick={handleExport}>Export</button>
-                <button onClick={() => fileInputRef.current.click()}>
-                  Import
-                </button>
-              </div>
-            )}
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              hidden
-              accept=".json"
-              onChange={handleImport}
-            />
-
+            
             {/* ADD WIDGET */}
             <button
               onClick={() => setIsModalOpen(true)}
