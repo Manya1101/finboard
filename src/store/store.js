@@ -4,7 +4,7 @@ import widgetReducer from "./widgetSlice";
 
 
 import storage from "redux-persist/lib/storage";
-import { persistReducer, persistStore } from "redux-persist";
+import {persistReducer, persistStore } from "redux-persist";
 
 const rootReducer = combineReducers({
   widgets: widgetReducer,

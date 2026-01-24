@@ -22,8 +22,11 @@ const widgetSlice = createSlice({
     clearWidgets: (state) => {
       state.list = [];
     },
+    reorderWidgets: (state, action) => {
+      state.list = action.payload;
+    },
   },
 });
 
-export const { addWidget, deleteWidget ,updateWidget } = widgetSlice.actions;
+export const { addWidget, deleteWidget ,updateWidget,reorderWidgets } = widgetSlice.actions;
 export default widgetSlice.reducer;
