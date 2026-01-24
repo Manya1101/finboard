@@ -25,5 +25,5 @@ const widgetSlice = createSlice({
   },
 });
 
-export const { addWidget, deleteWidget } = widgetSlice.actions;
+export const { addWidget, deleteWidget ,updateWidget } = widgetSlice.actions;
 export default widgetSlice.reducer;
