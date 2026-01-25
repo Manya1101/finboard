@@ -1,7 +1,7 @@
 "use client";
 
 import { useSelector, useDispatch } from "react-redux";
-import { addWidget, deleteWidget } from "@/store/widgetSlice";
+import { addWidget, deleteWidget ,updateWidget } from "@/store/widgetSlice";
 //import { addWidget } from "@/store/widgetSlice"; 
 //import { useState } from "react"; 
 import { useState, useEffect, Suspense, useRef } from "react";
@@ -27,6 +27,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { reorderWidgets } from "@/store/widgetSlice";
 import { v4 as uuidv4 } from "uuid";
+import { nanoid } from "@reduxjs/toolkit";
 
 
 function SortableWidget({ id, children, className }) {
@@ -81,43 +82,53 @@ export default function Dashboard() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [configWidget, setConfigWidget] = useState(null); // Configure modal
   
-    useEffect(() => {
-    const savedWidgets = localStorage.getItem("widgets");
-      if (!savedWidgets) return;
-      
+    const hasLoaded = useRef(false);
+
+   useEffect(() => {
+  const savedWidgets = localStorage.getItem("widgets");
+  if (!savedWidgets) return;
+
   const parsedWidgets = JSON.parse(savedWidgets);
 
-  // Load once, exactly as stored
-  parsedWidgets.forEach(widget => {
-    dispatch(addWidget(widget));
-  });
+  // Load widgets ONCE and AS-IS
+  //dispatch(reorderWidgets(parsedWidgets));
+  const uniqueWidgets = Array.from(
+  new Map(parsedWidgets.map(w => [w.id, w])).values()
+  );
+
+   dispatch(reorderWidgets(uniqueWidgets));
+
 }, [dispatch]);
 
   // Save to localStorage whenever widgets change
 useEffect(() => {
   if (widgets.length > 0) {
-      const lightweightWidgets = widgets.map(w => ({
-      id: w.id,
-      displayMode: w.displayMode,
-      title: w.title,
-    }));
-    localStorage.setItem("widgets", JSON.stringify(lightweightWidgets));
+     localStorage.setItem("widgets", JSON.stringify(widgets));
   } else {
     localStorage.removeItem("widgets");
   }
 }, [widgets]);
 
-  const handleAddWidget = (widget) => {
-    const widgetWithId = { ...widget, id: uuidv4() };
-  dispatch(addWidget(widgetWithId));
-  setIsModalOpen(false);
-    };
-    const handleDeleteWidget = (id) => {
-    if (confirm("Delete this widget?")) {
-      dispatch(deleteWidget(id));
-    }
+   const handleAddWidget = (widget) => {
+      dispatch(
+        addWidget({
+          ...widget,
+          id: nanoid(), // ID generated ONCE here
+        })
+      );
+      setIsModalOpen(false);
     };
 
+    const handleDeleteWidget = (id) => {
+      dispatch(deleteWidget(id));
+    };
+    
+  const handleUpdate = (id) => {
+    const newName = prompt("Enter new widget name:");
+    if (newName) {
+      dispatch(updateWidget({ id, data: { name: newName } }));
+    }
+  };
     const handleConfigureWidget = (widget) => {
     console.log("Configure widget:", widget);
     };
@@ -144,7 +155,7 @@ useEffect(() => {
 
         {/* HEADER */}
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-white">API Dashboard</h1>
+          <h1 className="text-3xl font-bold text-white">Finance Dashboard</h1>
 
           <div className="flex gap-3">
             
@@ -171,51 +182,51 @@ useEffect(() => {
       strategy={rectSortingStrategy}
     >
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-
-        {widgets.map((widget) => {
-          const getGridClass = () => {
-            if (widget.displayMode === "chart") return "lg:col-span-2";
-            if (widget.displayMode === "table") return "xl:col-span-3";
-            return "";
-          };
-
-          return (
+           
+        {widgets.map((widget) => (
             <SortableWidget
-              key={widget.id}
-              id={widget.id}
-              className={getGridClass()}
-            >
-              <Suspense fallback={<WidgetSkeleton type={widget.displayMode} />}>
+                    key={widget.id}
+                    id={widget.id}
+                    className={
+                      widget.displayMode === "chart"
+                        ? "lg:col-span-2"
+                        : widget.displayMode === "table"
+                        ? "xl:col-span-3"
+                        : ""
+                    }
+                  >
+                    <Suspense
+                      fallback={
+                        <WidgetSkeleton type={widget.displayMode} />
+                      }
+                    >
+                      {widget.displayMode === "card" && (
+                        <CardWidget
+                          widget={widget}
+                          onDelete={handleDeleteWidget}
+                          onConfigure={handleConfigureWidget}
+                        />
+                      )}
 
-                {widget.displayMode === "card" && (
-                  <CardWidget
-                    widget={widget}
-                    onDelete={handleDeleteWidget}
-                    onConfigure={handleConfigureWidget}
-                  />
-                )}
+                      {widget.displayMode === "table" && (
+                        <EnhancedTableWidget
+                          widget={widget}
+                          onDelete={handleDeleteWidget}
+                          onConfigure={handleConfigureWidget}
+                        />
+                      )}
 
-                {widget.displayMode === "table" && (
-                  <EnhancedTableWidget
-                    widget={widget}
-                    onDelete={handleDeleteWidget}
-                    onConfigure={handleConfigureWidget}
-                  />
-                )}
-
-                {widget.displayMode === "chart" && (
-                  <EnhancedChartWidget
-                    widget={widget}
-                    onDelete={handleDeleteWidget}
-                    onConfigure={handleConfigureWidget}
-                  />
-                )}
-
-              </Suspense>
-            </SortableWidget>
-          );
-        })}
-
+                      {widget.displayMode === "chart" && (
+                        <EnhancedChartWidget
+                          widget={widget}
+                          onDelete={handleDeleteWidget}
+                          onConfigure={handleConfigureWidget}
+                        />
+                      )}
+                    </Suspense>
+                  </SortableWidget>
+                ))}
+         
       </div>
     </SortableContext>
   </DndContext>

@@ -5,7 +5,7 @@ import { X, RefreshCcw, Plus } from "lucide-react";
 import { useDispatch } from "react-redux";
 import { updateWidget } from "@/store/widgetSlice";
 
-/* UTILITIES (same as before) */
+/* UTILITIES  */
 const resolvePath = (obj, path) => {
   if (!obj || !path) return undefined;
   const parts = path.split(".");
@@ -39,24 +39,45 @@ const extractNestedFields = (obj, prefix = "") => {
   });
   return paths;
 };
-
 const extractArrayNodes = (obj, prefix = "") => {
   let nodes = [];
-  if (!obj || typeof obj !== "object") return [];
+
+  if (!obj) return [];
+
+  // ✅ Handle root-level array
+  if (Array.isArray(obj)) {
+    nodes.push(prefix || ""); // "" means root array
+    if (obj[0] && typeof obj[0] === "object") {
+      nodes = [...nodes, ...extractArrayNodes(obj[0], prefix)];
+    }
+    return nodes;
+  }
+
+  if (typeof obj !== "object") return [];
+
   Object.entries(obj).forEach(([key, value]) => {
     const full = prefix ? `${prefix}.${key}` : key;
     if (Array.isArray(value)) nodes.push(full);
-    else if (typeof value === "object")
-      nodes = [...nodes, ...extractArrayNodes(value, full)];
+    else if (typeof value === "object") nodes = [...nodes, ...extractArrayNodes(value, full)];
   });
+
   return nodes;
 };
+
+
 
 const extractArrayColumns = (json, arrayPath) => {
   try {
     let node = json;
-    arrayPath.split(".").forEach((p) => (node = node?.[p]));
-    if (!Array.isArray(node) || !node[0] || typeof node[0] !== "object")
+    const parts = arrayPath.split(".").map(p => {
+      const match = p.match(/^(.+?)\[(\d+)\]$/);
+      if (match) return [match[1], Number(match[2])];
+      return [p];
+    }).flat();
+
+    parts.forEach(p => { node = node?.[p]; });
+
+    if (!Array.isArray(node) || node.length === 0 || typeof node[0] !== "object")
       return [];
     return Object.keys(node[0]);
   } catch {
@@ -65,7 +86,7 @@ const extractArrayColumns = (json, arrayPath) => {
 };
 
 /* =====================================================
-   CONFIGURE WIDGET MODAL (MODE LOCKED)
+   CONFIGURE WIDGET MODAL
 ===================================================== */
 export default function ConfigureWidgetModal({ widget, onClose }) {
   const dispatch = useDispatch();
@@ -115,33 +136,59 @@ export default function ConfigureWidgetModal({ widget, onClose }) {
 
   /* Test API */
   const handleTestApi = async () => {
-    if (!apiUrl.trim()) return alert("Enter API URL first.");
-    setLoading(true);
+  if (!apiUrl.trim()) return alert("Enter API URL first.");
+  setLoading(true);
 
-    try {
-      const res = await fetch(buildFinalUrl(), { headers: buildHeaders() });
-      const json = await res.json();
+  try {
+    const res = await fetch(buildFinalUrl(), { headers: buildHeaders() });
+    let json = await res.json();
 
-      setResponseJson(json);
-
-      const fields = extractNestedFields(json);
-      setAvailableFields(fields);
-
-      const arrays = extractArrayNodes(json);
-      setArrayNodes(arrays);
-
-      if (selectedArray) {
-        const cols = extractArrayColumns(json, selectedArray);
-        setArrayColumns(cols);
-      }
-
-      setTested(true);
-    } catch (err) {
-      alert("Failed to fetch API.");
+    // ✅ Handle Alpha Vantage special cases
+    // 1. If TIME_SERIES_* endpoint, convert object to array
+    if (json["Time Series (Daily)"]) {
+      const arrayData = Object.entries(json["Time Series (Daily)"]).map(
+        ([date, data]) => ({ date, ...data })
+      );
+      json = { "Time Series (Daily)": arrayData }; // replace object with array
     }
-    setLoading(false);
-  };
 
+    // 2. If GLOBAL_QUOTE, wrap in an array for table/card detection
+    else if (json["Global Quote"]) {
+      json = { "Global Quote": [json["Global Quote"]] }; // wrap object in array
+    }
+
+    // 3. SYMBOL_SEARCH already returns array in bestMatches → no change needed
+
+    setResponseJson(json);
+
+    const fields = extractNestedFields(json);
+    setAvailableFields(fields);
+
+    const arrays = extractArrayNodes(json);
+    setArrayNodes(arrays);
+
+    let arrayCols = [];
+    if (selectedArray && arrays.includes(selectedArray)) {
+      arrayCols = extractArrayColumns(json, selectedArray);
+      setArrayColumns(arrayCols);
+    }
+
+    // 🔹 Debug logs
+    console.log("API Response JSON:", json);
+    console.log("Available fields:", fields);
+    console.log("Array nodes detected:", arrays);
+    console.log("Columns for selected array:", arrayCols);
+
+    setTested(true);
+  } catch (err) {
+    console.error(err);
+    alert("Failed to fetch API.");
+  }
+
+  setLoading(false);
+};
+
+   
   /* Auto-update columns */
   useEffect(() => {
     if (selectedArray && responseJson) {
@@ -307,7 +354,7 @@ export default function ConfigureWidgetModal({ widget, onClose }) {
           )}
         </button>
 
-        {/* CONDITIONAL UI BASED ON MODE (LOCKED) */}
+        {/* CONDITIONAL UI BASED ON MODE  */}
 
         {/* CARD MODE */}
         {displayMode === "card" && tested && (

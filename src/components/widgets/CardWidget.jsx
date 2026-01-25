@@ -1,13 +1,13 @@
 "use client";
 
 import { RotateCcw, Settings, Trash } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect,useCallback } from "react";
 import { useDispatch } from "react-redux";
 import ConfigureWidgetModal from "../modals/ConfigureWidgetModal";
 import { updateWidget, deleteWidget } from "@/store/widgetSlice";
 
 /* ------------------------------------------------------
-   ✅ Smart Nested Value Resolver
+    Smart Nested Value Resolver
    Supports:
      - data.rates.INR
      - data.items[0].price
@@ -35,14 +35,18 @@ const resolvePath = (obj, path) => {
 // Build URL
 // ------------------------------------------------------
 const buildUrl = (widget) => {
+    if (!widget?.apiUrl) return null; 
+
   let url = widget.apiUrl;
 
-  if (widget.params?.length > 0) {
+  if (Array.isArray(widget.params) && widget.params.length > 0) {
     const query = widget.params
       .filter((p) => p.key && p.value)
-      .map((p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
+      .map(
+        (p) =>
+          `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`
+      )
       .join("&");
-
     url += url.includes("?") ? `&${query}` : `?${query}`;
   }
 
@@ -54,6 +58,7 @@ const buildUrl = (widget) => {
 // ------------------------------------------------------
 const buildHeaders = (widget) => {
   const h = {};
+  if (!Array.isArray(widget.headers)) return h; 
   widget.headers?.forEach((item) => {
     if (item.key && item.value) h[item.key] = item.value;
   });
@@ -71,48 +76,129 @@ export default function CardWidget({ widget, onConfigure, onDelete }) {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
 
   /* ------------------------------------------------------
-     🔄 FETCH API
+      FETCH API
   ------------------------------------------------------ */
-  const fetchData = async () => {
-    try {
-      const url = buildUrl(widget);
-      const headers = buildHeaders(widget);
+  const fetchData = useCallback(async () => {
+  const url = buildUrl(widget);
 
-      const res = await fetch(url, { headers });
-      const json = await res.json();
+  if (!url) {
+    console.warn(" Widget has no API URL:", widget.id);
+    return;
+  }
 
-      setApiData(json);
-      const now = new Date().toLocaleTimeString();
-      setLastUpdated(now);
+  try {
+    const headers = buildHeaders(widget);
+    const res = await fetch(url, { headers });
 
-      dispatch(
-        updateWidget({
-          id: widget.id,
-          changes: { lastUpdated: now },
-        })
-      );
-    } catch (err) {
-      console.error("API Fetch Error →", err);
+    if (!res.ok) {
+      console.error("API Error:", res.status);
+      return;
     }
-  };
+
+    const json = await res.json();
+     let normalized = json;
+
+          // Alpha Vantage time-series normalization
+          const timeSeriesKey = Object.keys(json).find((k) =>
+            k.toLowerCase().includes("time series")
+          );
+
+          if (timeSeriesKey) {
+            const seriesObj = json[timeSeriesKey];
+
+            normalized = {
+              data: Object.entries(seriesObj).map(([date, values]) => ({
+                date,
+                open: Number(values["1. open"]),
+                high: Number(values["2. high"]),
+                low: Number(values["3. low"]),
+                close: Number(values["4. close"]),
+                volume: Number(values["5. volume"]),
+              })),
+            };
+          }
+
+      setApiData(normalized);
+
+    const now = new Date().toLocaleTimeString();
+    setLastUpdated(now);
+
+    dispatch(
+      updateWidget({
+        id: widget.id,
+        changes: { lastUpdated: now },
+      })
+    );
+  } catch (err) {
+    console.error("API Fetch Error →", err);
+  }
+}, [
+  widget.id,
+  widget.apiUrl,
+  widget.params,
+  widget.headers,
+  dispatch,
+]);
 
   /* ------------------------------------------------------
-     ⏱️ AUTO REFRESH
+     ⏱ AUTO REFRESH
   ------------------------------------------------------ */
   useEffect(() => {
-    fetchData();
-    const timer = setInterval(fetchData, (widget.interval ?? 30) * 1000);
-    return () => clearInterval(timer);
-  }, [widget.apiUrl, widget.params, widget.headers, widget.interval]);
+  fetchData();
 
+
+  const timer = setInterval(
+    fetchData,
+    (widget.interval ?? 30) * 1000
+  );
+
+  return () => clearInterval(timer);
+}, [fetchData, widget.interval]);
   /* ------------------------------------------------------
-     🧠 COMPUTE CARD VALUES USING NESTED PATHS
+      COMPUTE CARD VALUES USING NESTED PATHS
   ------------------------------------------------------ */
-  const fields =
-    widget.cardFields?.map((path) => ({
-      label: path,
-      value: apiData ? resolvePath(apiData, path) : "--",
-    })) ?? [];
+   /* ------------------------------------------------------
+    COMPUTE CARD VALUES (ARRAY-BASED, ALPHA-VANTAGE SAFE)
+------------------------------------------------------ */
+const dataArray = resolvePath(apiData, widget.arrayPath);
+const latestItem = Array.isArray(dataArray) ? dataArray[0] : null;
+
+const fields =
+  widget.cardFields?.map((fieldPath) => {
+    const cleanPath = fieldPath.replace(
+      `${widget.arrayPath}[0].`,
+      ""
+    );
+
+    return {
+      label: cleanPath,
+      value: latestItem?.[cleanPath] ?? "--",
+    };
+  }) ?? [];
+
+
+   const normalizeAlphaVantage = (json, apiUrl) => {
+    if (!apiUrl?.includes("alphavantage.co")) return json;
+
+    const timeSeriesKey = Object.keys(json).find((k) =>
+    k.toLowerCase().includes("time series")
+    );
+
+  if (!timeSeriesKey) return json;
+
+  return {
+    data: Object.entries(json[timeSeriesKey]).map(([date, values]) => ({
+      date,
+      open: Number(values["1. open"]),
+      high: Number(values["2. high"]),
+      low: Number(values["3. low"]),
+      close: Number(values["4. close"]),
+      volume: Number(values["5. volume"]),
+    })),
+  };
+};
+  
+    
 
   /* ------------------------------------------------------
      UI

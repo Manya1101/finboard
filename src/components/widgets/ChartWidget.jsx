@@ -11,7 +11,7 @@ import {
 } from "recharts";
 import { RefreshCcw, Trash, Settings } from "lucide-react";
 
-// Same path resolver from your dashboard
+// path resolver from dashboard
 const resolvePath = (obj, path) => {
   if (!obj || !path) return undefined;
   const parts = path.split(".");
@@ -44,13 +44,19 @@ export const EnhancedChartWidget = ({ widget, onDelete, onConfigure }) => {
 
   const buildUrl = () => {
     let url = widget.apiUrl;
-    if (widget.params?.length > 0) {
-      const query = widget.params
+     const hasApiKey = widget.params?.some(
+      (p) => p.key.toLowerCase() === "apikey" && p.value
+    );
+    const paramsWithKey = hasApiKey
+      ? widget.params
+      : [...(widget.params || []), { key: "apikey", value: process.env.NEXT_PUBLIC_ALPHA_VANTAGE_KEY }];
+
+    if (paramsWithKey.length > 0) {
+      const query = paramsWithKey
         .filter((p) => p.key && p.value)
-        .map(
-          (p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`
-        )
+        .map((p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
         .join("&");
+
       url += url.includes("?") ? `&${query}` : `?${query}`;
     }
     return url;
@@ -95,7 +101,7 @@ export const EnhancedChartWidget = ({ widget, onDelete, onConfigure }) => {
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 sm:p-5 shadow-xl text-white h-full">
       {/* -----------------------------------------------------------
-          HEADER WITH SETTINGS BUTTON (NEW)
+          HEADER WITH SETTINGS BUTTON 
       ------------------------------------------------------------ */}
       <div className="flex justify-between items-center mb-4">
         {/* Title */}
@@ -115,7 +121,7 @@ export const EnhancedChartWidget = ({ widget, onDelete, onConfigure }) => {
             onClick={fetchData}
           />
 
-          {/* ✅ CONFIG SETTINGS BUTTON */}
+          {/* CONFIG SETTINGS BUTTON */}
           <Settings
             className="cursor-pointer hover:text-white transition-colors"
             size={18}

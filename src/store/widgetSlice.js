@@ -1,4 +1,5 @@
 import { createSlice } from "@reduxjs/toolkit";
+import { nanoid } from "@reduxjs/toolkit";
 
 const widgetSlice = createSlice({
   name: "widgets",
@@ -6,19 +7,34 @@ const widgetSlice = createSlice({
     list: [],
   },
   reducers: {
-    addWidget: (state, action) => {
-      state.list.push(action.payload);
+    addWidget: {
+      reducer: (state, action) => {
+        state.list.push(action.payload);
+      },
+      prepare: (widget) => {
+        return {
+          payload: {
+            ...widget,
+            id: nanoid(), //  ALWAYS UNIQUE
+          },
+        };
+      },
     },
     deleteWidget: (state, action) => {
       state.list = state.list.filter(
         (widget) => widget.id !== action.payload
       );
     },
-     updateWidget: (state, action) => {
-      const index = state.list.findIndex((w) => w.id === action.payload.id);
-      if (index !== -1)
-        state.list[index] = { ...state.list[index], ...action.payload.data };
+    updateWidget: (state, action) => {
+      const index = state.list.findIndex(w => w.id === action.payload.id);
+      if (index !== -1) {
+        state.list[index] = {
+          ...state.list[index],
+          ...action.payload.changes,
+        };
+      }
     },
+
     clearWidgets: (state) => {
       state.list = [];
     },

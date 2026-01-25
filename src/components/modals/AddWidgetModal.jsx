@@ -2,22 +2,21 @@ import { useState, useEffect } from "react";
 import {
   X,
   RefreshCcw,
-  Plus,
-  RotateCcw,
-  Settings,
-  Trash,
-  Search,
-  ChevronLeft,
-  ChevronRight,
+  Plus
 } from "lucide-react";
 import { useSelector, useDispatch } from "react-redux";
 import { addWidget, deleteWidget } from "@/store/widgetSlice";
 import JSONFieldExplorer from "../json/JSONFieldExplorer";
+import { nanoid } from "@reduxjs/toolkit";
+
+const isAlphaVantage = (url) =>
+  url.includes("alphavantage.co/query");
 
 /* ============================================
    UTILITY: Resolve Nested Paths
    Supports: data.rates.INR, data[0].price, a.b[2].c
 ============================================ */
+
 const resolvePath = (obj, path) => {
   if (!obj || !path) return undefined;
 
@@ -76,7 +75,13 @@ const extractNestedFields = (obj, prefix = "") => {
 ============================================ */
 const extractArrayNodes = (obj, prefix = "") => {
   let nodes = [];
-  if (!obj || typeof obj !== "object" || obj === null) return [];
+
+  if (Array.isArray(obj)) {
+    nodes.push(prefix || "data");
+    return nodes;
+  }
+
+  if (!obj || typeof obj !== "object") return [];
 
   for (const key of Object.keys(obj)) {
     const full = prefix ? `${prefix}.${key}` : key;
@@ -86,13 +91,14 @@ const extractArrayNodes = (obj, prefix = "") => {
       nodes.push(full);
     }
 
-    if (!Array.isArray(value) && typeof value === "object" && value !== null) {
+    if (value && typeof value === "object") {
       nodes = [...nodes, ...extractArrayNodes(value, full)];
     }
   }
 
   return nodes;
 };
+
 
 /* ============================================
    UTILITY: Extract Array Columns
@@ -120,6 +126,7 @@ const extractArrayColumns = (json, arrayPath) => {
     return [];
   }
 };
+
 
 /* ============================================
    ADD WIDGET MODAL
@@ -172,39 +179,91 @@ export default function AddWidgetModal({ onClose, onAdd }) {
     });
     return h;
   };
+const handleTestApi = async () => {
+  if (!apiUrl.trim()) {
+    alert("Enter API URL first");
+    return;
+  }
 
-  const handleTestApi = async () => {
-    if (!apiUrl.trim()) return alert("Enter API URL first");
+  setLoading(true);
 
-    setLoading(true);
+  try {
+    // Build params locally (DO NOT mutate state)
+    const finalParams = [...params];
 
-    try {
-      const res = await fetch(buildFinalUrl(), { headers: buildHeaders() });
-      const json = await res.json();
+    const hasApiKey = finalParams.some(
+      (p) => p.key.toLowerCase() === "apikey"
+    );
 
-      setResponseJson(json);
-      setAvailableFields(extractNestedFields(json));
-
-      const arrays = extractArrayNodes(json);
-      setArrayNodes(arrays);
-
-      if (arrays.length === 1) {
-        setSelectedArray(arrays[0]);
-        const cols = extractArrayColumns(json, arrays[0]);
-        setArrayColumns(cols);
-      } else {
-        setSelectedArray("");
-        setArrayColumns([]);
-      }
-
-      setTested(true);
-    } catch (err) {
-      console.error("Test API error:", err);
-      alert("Failed to read API response.");
+    if (!hasApiKey && isAlphaVantage(apiUrl)) {
+      finalParams.push({
+        key: "apikey",
+        value: process.env.NEXT_PUBLIC_ALPHA_VANTAGE_KEY,
+      });
     }
 
+    const q = finalParams
+      .filter((p) => p.key && p.value)
+      .map(
+        (p) =>
+          `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`
+      )
+      .join("&");
+
+    const url = q
+      ? apiUrl + (apiUrl.includes("?") ? "&" : "?") + q
+      : apiUrl;
+
+     const res = await fetch(url, { headers: buildHeaders() });
+const json = await res.json();
+
+let finalJson = json; // default
+
+if (isAlphaVantage(apiUrl)) {
+  // Detect the time series key
+  const timeSeriesKey = Object.keys(json).find((k) =>
+    k.toLowerCase().includes("time series")
+  );
+
+  if (timeSeriesKey) {
+    // TRANSFORM object → array so modal can detect it
+    finalJson = {
+      data: Object.entries(json[timeSeriesKey]).map(([date, values]) => ({
+        date,
+        open: Number(values["1. open"]),
+        high: Number(values["2. high"]),
+        low: Number(values["3. low"]),
+        close: Number(values["4. close"]),
+        volume: Number(values["5. volume"]),
+      })),
+    };
+  }
+}
+
+// 🔥 NOW the system sees an ARRAY
+setResponseJson(finalJson);
+setAvailableFields(extractNestedFields(finalJson));
+
+const arrays = extractArrayNodes(finalJson);
+setArrayNodes(arrays);
+
+if (arrays.length === 1) {
+  setSelectedArray(arrays[0]);
+  setArrayColumns(extractArrayColumns(finalJson, arrays[0]));
+}
+
+setTested(true);
+  } catch (err) {
+    console.error("Test API error:", err);
+    alert(
+      "API test failed (likely CORS). API integration is still valid."
+    );
+  } finally {
     setLoading(false);
-  };
+  }
+};
+
+
 
   useEffect(() => {
     if (selectedArray && responseJson) {
@@ -627,18 +686,20 @@ export default function AddWidgetModal({ onClose, onAdd }) {
                   }
 
                   onAdd({
-                    id: crypto.randomUUID(),
+                    id: nanoid(),
                     name: widgetName,
                     apiUrl,
                     interval: Number(interval),
                     displayMode,
                     headers: headers.filter((h) => h.key && h.value),
                     params: params.filter((p) => p.key && p.value),
+
                     cardFields,
                     chartXField,
                     chartYField,
-                    arrayPath: selectedArray,
+                    arrayPath: selectedArray || "data",
                     tableColumns,
+                    
                     availableFields,
                   });
                 }}

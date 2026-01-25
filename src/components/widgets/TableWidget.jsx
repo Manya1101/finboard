@@ -5,38 +5,30 @@ import {
   Settings,
   Trash,
   Search,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
 
 import { useState, useEffect } from "react";
 
 /* -------------------------------------------------------
-    Resolve nested path: supports a.b.c[2].price
+   Resolve nested path: supports a.b.c[2].price
 --------------------------------------------------------*/
 const resolvePath = (obj, path) => {
   if (!obj || !path) return undefined;
-  const parts = path.split(".");
-  let current = obj;
 
-  for (let part of parts) {
-    const arrayMatch = part.match(/^(.+?)\[(\d+)\]$/);
+  return path.split(".").reduce((acc, part) => {
+    if (!acc) return undefined;
 
-    if (arrayMatch) {
-      const [, key, index] = arrayMatch;
-      current = current?.[key]?.[Number(index)];
-    } else {
-      current = current?.[part];
+    const match = part.match(/^(.+?)\[(\d+)\]$/);
+    if (match) {
+      const [, key, index] = match;
+      return acc[key]?.[Number(index)];
     }
-
-    if (current === undefined || current === null) return undefined;
-  }
-
-  return current;
+    return acc[part];
+  }, obj);
 };
 
 /* -------------------------------------------------------
-    COMPONENT
+   COMPONENT
 --------------------------------------------------------*/
 export const EnhancedTableWidget = ({ widget, onDelete, onConfigure }) => {
   const [apiData, setApiData] = useState(null);
@@ -44,12 +36,13 @@ export const EnhancedTableWidget = ({ widget, onDelete, onConfigure }) => {
   const [searchText, setSearchText] = useState("");
   const [sortField, setSortField] = useState(null);
   const [sortAsc, setSortAsc] = useState(true);
-  const [page, setPage] = useState(1);
 
-  const pageSize = 10;
-
+  /* -------------------------------------------------------
+     Build URL & Headers
+  --------------------------------------------------------*/
   const buildUrl = () => {
     let url = widget.apiUrl;
+
     if (widget.params?.length > 0) {
       const query = widget.params
         .filter((p) => p.key && p.value)
@@ -57,8 +50,10 @@ export const EnhancedTableWidget = ({ widget, onDelete, onConfigure }) => {
           (p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`
         )
         .join("&");
+
       url += url.includes("?") ? `&${query}` : `?${query}`;
     }
+
     return url;
   };
 
@@ -70,12 +65,14 @@ export const EnhancedTableWidget = ({ widget, onDelete, onConfigure }) => {
     return h;
   };
 
+  /* -------------------------------------------------------
+     Fetch API
+  --------------------------------------------------------*/
   const fetchData = async () => {
     try {
-      const url = buildUrl();
-      const headers = buildHeaders();
-      const res = await fetch(url, { headers });
+      const res = await fetch(buildUrl(), { headers: buildHeaders() });
       const json = await res.json();
+
       setApiData(json);
       setLastUpdated(new Date().toLocaleTimeString());
     } catch (err) {
@@ -89,40 +86,42 @@ export const EnhancedTableWidget = ({ widget, onDelete, onConfigure }) => {
     return () => clearInterval(timer);
   }, [widget.apiUrl, widget.params, widget.headers, widget.interval]);
 
-  const extractRows = (data, arrayPath) => {
-    if (!data || !arrayPath) return [];
-    const arr = resolvePath(data, arrayPath);
-    return Array.isArray(arr) ? arr : [];
-  };
+  /* -------------------------------------------------------
+     Extract Rows
+  --------------------------------------------------------*/
+  const rows = Array.isArray(resolvePath(apiData, widget.arrayPath))
+    ? resolvePath(apiData, widget.arrayPath)
+    : [];
 
-  const rows = extractRows(apiData, widget.arrayPath);
-
-  const searched = rows.filter((r) =>
-    JSON.stringify(r).toLowerCase().includes(searchText.toLowerCase())
+  /* -------------------------------------------------------
+     Search & Sort
+  --------------------------------------------------------*/
+  const searched = rows.filter((row) =>
+    JSON.stringify(row).toLowerCase().includes(searchText.toLowerCase())
   );
 
   const sorted = [...searched].sort((a, b) => {
     if (sortField === null) return 0;
-    const columnName = widget.tableColumns[sortField];
-    const A = a[columnName];
-    const B = b[columnName];
+
+    const key = widget.tableColumns[sortField];
+    const A = a[key];
+    const B = b[key];
+
     if (A === undefined) return 1;
     if (B === undefined) return -1;
+
     if (typeof A === "number" && typeof B === "number") {
       return sortAsc ? A - B : B - A;
     }
+
     return sortAsc
       ? String(A).localeCompare(String(B))
       : String(B).localeCompare(String(A));
   });
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
-  const pageRows = sorted.slice((page - 1) * pageSize, page * pageSize);
-
-  useEffect(() => {
-    if (page > totalPages) setPage(1);
-  }, [totalPages, page]);
-
+  /* -------------------------------------------------------
+     UI
+  --------------------------------------------------------*/
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 sm:p-5 shadow-xl text-white">
       {/* HEADER */}
@@ -134,24 +133,22 @@ export const EnhancedTableWidget = ({ widget, onDelete, onConfigure }) => {
           </span>
         </div>
 
-        {/* ACTIONS */}
         <div className="flex gap-3 text-slate-400">
           <RotateCcw
-            className="cursor-pointer hover:text-white transition-colors"
             size={18}
+            className="cursor-pointer hover:text-white"
             onClick={fetchData}
           />
 
-          {/* ✅ SETTINGS BUTTON ADDED */}
           <Settings
             size={18}
-            className="cursor-pointer hover:text-white transition-colors"
+            className="cursor-pointer hover:text-white"
             onClick={() => onConfigure(widget)}
           />
 
           <Trash
-            className="cursor-pointer hover:text-red-400 transition-colors"
             size={18}
+            className="cursor-pointer hover:text-red-400"
             onClick={() => onDelete(widget.id)}
           />
         </div>
@@ -160,7 +157,7 @@ export const EnhancedTableWidget = ({ widget, onDelete, onConfigure }) => {
       {/* SEARCH */}
       <div className="relative mb-4">
         <input
-          className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 pl-8 text-sm focus:outline-none focus:border-slate-600"
+          className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 pl-8 text-sm focus:outline-none"
           placeholder="Search table..."
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
@@ -169,106 +166,69 @@ export const EnhancedTableWidget = ({ widget, onDelete, onConfigure }) => {
       </div>
 
       {/* TABLE */}
-      <div className="overflow-x-auto -mx-4 sm:mx-0">
-        <div className="inline-block min-w-full align-middle">
-          <table className="min-w-full text-sm">
-            <thead className="border-b border-slate-700 text-slate-400">
-              <tr>
-                {widget.tableColumns?.map((columnName, idx) => (
-                  <th
-                    key={idx}
-                    className="py-2 px-3 text-left cursor-pointer hover:text-white select-none whitespace-nowrap transition-colors"
-                    onClick={() => {
-                      if (sortField === idx) setSortAsc(!sortAsc);
-                      else {
-                        setSortField(idx);
-                        setSortAsc(true);
-                      }
-                    }}
-                  >
-                    {columnName}
-                    {sortField === idx ? (sortAsc ? " ↑" : " ↓") : ""}
-                  </th>
-                ))}
-              </tr>
-            </thead>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead className="border-b border-slate-700 text-slate-400">
+            <tr>
+              {widget.tableColumns?.map((col, idx) => (
+                <th
+                  key={idx}
+                  className="py-2 px-3 text-left cursor-pointer hover:text-white"
+                  onClick={() => {
+                    if (sortField === idx) setSortAsc(!sortAsc);
+                    else {
+                      setSortField(idx);
+                      setSortAsc(true);
+                    }
+                  }}
+                >
+                  {col}
+                  {sortField === idx ? (sortAsc ? " ↑" : " ↓") : ""}
+                </th>
+              ))}
+            </tr>
+          </thead>
 
-            <tbody>
-              {!apiData ? (
-                <tr>
-                  <td
-                    colSpan={widget.tableColumns?.length || 1}
-                    className="py-4 text-center text-slate-500"
-                  >
-                    <div className="animate-pulse">Loading...</div>
-                  </td>
+          <tbody>
+            {!apiData ? (
+              <tr>
+                <td
+                  colSpan={widget.tableColumns?.length || 1}
+                  className="py-4 text-center text-slate-500"
+                >
+                  Loading...
+                </td>
+              </tr>
+            ) : sorted.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={widget.tableColumns?.length || 1}
+                  className="py-4 text-center text-slate-500"
+                >
+                  No data found
+                </td>
+              </tr>
+            ) : (
+              sorted.map((row, rowIdx) => (
+                <tr
+                  key={rowIdx}
+                  className="border-b border-slate-800 hover:bg-slate-800/50"
+                >
+                  {widget.tableColumns.map((col, colIdx) => (
+                    <td key={colIdx} className="py-2 px-3">
+                      {row[col] ?? "--"}
+                    </td>
+                  ))}
                 </tr>
-              ) : pageRows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={widget.tableColumns?.length || 1}
-                    className="py-4 text-center text-slate-500"
-                  >
-                    {rows.length === 0
-                      ? "No data available"
-                      : "No results found"}
-                  </td>
-                </tr>
-              ) : (
-                pageRows.map((row, rowIndex) => (
-                  <tr
-                    key={rowIndex}
-                    className="border-b border-slate-800 hover:bg-slate-800/50 transition-colors"
-                  >
-                    {widget.tableColumns?.map((columnName, colIndex) => {
-                      const value = row[columnName];
-                      return (
-                        <td
-                          key={colIndex}
-                          className="py-2 px-3 whitespace-nowrap"
-                        >
-                          {value !== undefined && value !== null
-                            ? String(value)
-                            : "--"}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
 
-      {/* PAGINATION */}
-      {rows.length > 0 && (
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-3 mt-4 text-sm text-slate-400">
-          <button
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page <= 1}
-            className="flex gap-1 items-center disabled:opacity-40 hover:text-white"
-          >
-            <ChevronLeft size={16} /> Prev
-          </button>
-
-          <span>
-            Page {page} / {totalPages} • {pageRows.length} of {searched.length}{" "}
-            rows
-          </span>
-
-          <button
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page >= totalPages}
-            className="flex gap-1 items-center disabled:opacity-40 hover:text-white"
-          >
-            Next <ChevronRight size={16} />
-          </button>
-        </div>
-      )}
-
+      {/* FOOTER */}
       <div className="text-xs text-slate-500 border-t border-slate-700 pt-2 mt-3">
-        Last updated: {lastUpdated} • {rows.length} total rows
+        Last updated: {lastUpdated} • {rows.length} rows
       </div>
     </div>
   );
